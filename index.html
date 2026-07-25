@@ -5,12 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>カラフルタイマー</title>
 
-<!-- タブやブックマーク用のアイコン -->
-  <link rel="icon" type="image/png" href="icon.png">
-  <!-- スマホ・Chromebookのホーム画面用アイコン -->
-  <link rel="apple-touch-icon" href="icon.png">
-  <!-- ★ここまで追加★ -->
-  
   <!-- PWA設定 -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -18,7 +12,7 @@
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#000000">
   
-  <!-- アイコン設定（自作した icon.png をアップロードして同階層に配置してください） -->
+  <!-- アイコン設定 -->
   <link rel="icon" type="image/png" href="icon.png">
   <link rel="apple-touch-icon" href="icon.png">
   
@@ -118,74 +112,149 @@
   </main>
 
   <script>
-    // 既存のJSロジックと同一のため、ここから先は前のコードを適用してください
-    // 各種音声アナウンス関数
-    // すべての関数内で最初に speechSynthesis.cancel() を呼び、現在再生中の音声を停止してから新しい音声を再生します
-    function speakStartNotice() {
-      if (isMuted) return;
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel(); // 進行中の音声を中断
-        const text = isHiragana ? 'はじめ！' : 'スタート！';
-        const uttr = new SpeechSynthesisUtterance(text);
-        uttr.lang = 'ja-JP';
-        uttr.rate = 1.2;
-        uttr.pitch = 1.25;
-        window.speechSynthesis.speak(uttr);
+    let totalSeconds = 0;
+    let remainingSeconds = 0;
+    let targetEndTime = 0;
+    let isRunning = false;
+    let isMuted = false;
+    let isHiragana = true;
+    let timerInterval = null;
+    let wakeLock = null;
+    let lastClickSecond = -1;
+    let hasAnnouncedHalfway = false;
+    let hasAnnounced5Min = false;
+    let hasAnnounced1Min = false;
+
+    const BLOCK_COLORS = ['#ff3b30','#ff3b30','#ff3b30','#ff9500','#ff9500','#ff9500','#ffcc00','#ffcc00','#ffcc00','#34c759','#34c759','#34c759','#007aff','#007aff','#007aff'];
+    const DICT = {
+      hira: {title: 'カラフルタイマー', soundOn: 'おとあり', soundOff: 'おとなし', addTimeLabel: 'じかんをたす:', min: 'ふん', sec: 'びょう', clear: 'ぜんぶけす', start: 'はじめる', pause: 'とめる', reset: 'やりなおす'},
+      kanji: {title: 'カラフルタイマー', soundOn: '音あり', soundOff: 'マナーモード', addTimeLabel: '時間を足す:', min: '分', sec: '秒', clear: '全部クリア', start: 'スタート', pause: '一時停止', reset: 'リセット'}
+    };
+
+    let countdownClickSynth = null, musicBoxSynth = null;
+
+    async function requestWakeLock() { if ('wakeLock' in navigator && isRunning) try { wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {} }
+    function releaseWakeLock() { if (wakeLock) { wakeLock.release().then(() => { wakeLock = null; }); } }
+    
+    function prepareSpeech() { if ('speechSynthesis' in window) { window.speechSynthesis.getVoices(); const uttr = new SpeechSynthesisUtterance(''); uttr.volume = 0; window.speechSynthesis.speak(uttr); } }
+    
+    function initAudio() {
+      prepareSpeech();
+      if (countdownClickSynth || typeof Tone === 'undefined') return;
+      try {
+        const clickFilter = new Tone.Filter({frequency: 3200, type: 'bandpass', Q: 1.8}).toDestination();
+        countdownClickSynth = new Tone.NoiseSynth({noise: {type: 'white'}, envelope: {attack: 0.0005, decay: 0.012, sustain: 0}}).connect(clickFilter);
+        musicBoxSynth = new Tone.PolySynth(Tone.FMSynth, {harmonicity: 3.0, modulationIndex: 1.2, oscillator: {type: 'sine'}, envelope: {attack: 0.001, decay: 0.8, sustain: 0, release: 0.5}}).toDestination();
+      } catch (e) {}
+    }
+
+    function playCountdownClick() { if (isMuted || !countdownClickSynth) return; try { Tone.start(); countdownClickSynth.triggerAttackRelease('32n'); } catch (e) {} }
+
+    function speak(text) {
+      if (isMuted || !('speechSynthesis' in window)) return;
+      window.speechSynthesis.cancel();
+      const uttr = new SpeechSynthesisUtterance(text);
+      uttr.lang = 'ja-JP';
+      uttr.rate = 1.2;
+      uttr.pitch = 1.2;
+      window.speechSynthesis.speak(uttr);
+    }
+
+    function speakStartNotice() { speak(isHiragana ? 'はじめ！' : 'スタート！'); }
+    function speakHalfwayNotice() { speak(isHiragana ? 'のこり、はんぶん' : '残り、半分'); }
+    function speak5MinNotice() { speak(isHiragana ? 'のこり、５ふん' : '残り、5分'); }
+    function speak1MinNotice() { speak(isHiragana ? 'のこり、いっぷん' : '残り、1分'); }
+    function speakFinishNotice() { speak(isHiragana ? 'おわりです。おつかれさまでした。' : '終わりです。お疲れ様でした。'); }
+
+    function create7SegSVG(digit) {
+      const patterns = {'0':[1,1,1,1,1,1,0],'1':[0,1,1,0,0,0,0],'2':[1,1,0,1,1,0,1],'3':[1,1,1,1,0,0,1],'4':[0,1,1,0,0,1,1],'5':[1,0,1,1,0,1,1],'6':[1,0,1,1,1,1,1],'7':[1,1,1,0,0,0,0],'8':[1,1,1,1,1,1,1],'9':[1,1,1,1,0,1,1]};
+      const seg = patterns[digit] || [0,0,0,0,0,0,0];
+      const c = '#ffff00';
+      return `<svg class="w-6 h-10 sm:w-8 sm:h-14 md:w-16 md:h-24" viewBox="0 0 32 48" style="shape-rendering: crispEdges;">
+        ${seg[0] ? `<polygon points="4,2 28,2 22,8 10,8" fill="${c}" />` : ''}
+        ${seg[1] ? `<polygon points="30,3 30,22 23,19.5 23,9" fill="${c}" />` : ''}
+        ${seg[2] ? `<polygon points="30,26 30,45 23,39 23,28.5" fill="${c}" />` : ''}
+        ${seg[3] ? `<polygon points="4,46 28,46 22,40 10,40" fill="${c}" />` : ''}
+        ${seg[4] ? `<polygon points="2,26 2,45 9,39 9,28.5" fill="${c}" />` : ''}
+        ${seg[5] ? `<polygon points="2,3 2,22 9,19.5 9,9" fill="${c}" />` : ''}
+        ${seg[6] ? `<polygon points="5,24 9.5,20.5 22.5,20.5 27,24 22.5,27.5 9.5,27.5" fill="${c}" />` : ''}
+      </svg>`;
+    }
+
+    function renderBar() {
+      const container = document.getElementById('bar-container');
+      container.innerHTML = '';
+      const ratio = totalSeconds > 0 ? remainingSeconds / totalSeconds : 0;
+      for (let i = 0; i < 15; i++) {
+        const div = document.createElement('div');
+        div.className = 'h-full flex-1 bg-zinc-950 border border-zinc-900 relative overflow-hidden';
+        const fill = document.createElement('div');
+        fill.className = 'h-full w-full transition-all duration-200';
+        fill.style.backgroundColor = BLOCK_COLORS[i];
+        fill.style.width = ratio >= (i + 1) / 15 ? '100%' : (ratio <= i / 15 ? '0%' : ((ratio - (i/15)) * 15 * 100) + '%');
+        div.appendChild(fill);
+        container.appendChild(div);
       }
     }
 
-    function speakHalfwayNotice() {
-      if (isMuted) return;
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const text = isHiragana ? 'のこり、はんぶん' : '残り、半分';
-        const uttr = new SpeechSynthesisUtterance(text);
-        uttr.lang = 'ja-JP';
-        uttr.rate = 1.0;
-        uttr.pitch = 1.1;
-        window.speechSynthesis.speak(uttr);
-      }
+    function renderDigits() {
+      const minStr = String(Math.floor(remainingSeconds / 60)).padStart(2, '0');
+      const secStr = String(remainingSeconds % 60).padStart(2, '0');
+      document.getElementById('display-minutes-seg').innerHTML = minStr.split('').map(d => create7SegSVG(d)).join('');
+      document.getElementById('display-seconds-seg').innerHTML = secStr.split('').map(d => create7SegSVG(d)).join('');
     }
 
-    function speak5MinNotice() {
-      if (isMuted) return;
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const text = isHiragana ? 'のこり、５ふん' : '残り、5分';
-        const uttr = new SpeechSynthesisUtterance(text);
-        uttr.lang = 'ja-JP';
-        uttr.rate = 1.0;
-        uttr.pitch = 1.1;
-        window.speechSynthesis.speak(uttr);
+    function updateTimerTick() {
+      if (!isRunning) return;
+      remainingSeconds = Math.max(0, Math.ceil((targetEndTime - Date.now()) / 1000));
+      if (totalSeconds >= 6 && remainingSeconds <= Math.floor(totalSeconds / 2) && !hasAnnouncedHalfway) { speakHalfwayNotice(); hasAnnouncedHalfway = true; }
+      if (totalSeconds >= 900 && remainingSeconds <= 300 && !hasAnnounced5Min) { speak5MinNotice(); hasAnnounced5Min = true; }
+      if (totalSeconds >= 600 && remainingSeconds <= 60 && !hasAnnounced1Min) { speak1MinNotice(); hasAnnounced1Min = true; }
+      if (remainingSeconds <= 5 && remainingSeconds > 0 && lastClickSecond !== remainingSeconds) { playCountdownClick(); lastClickSecond = remainingSeconds; }
+      if (remainingSeconds === 0) {
+        clearInterval(timerInterval); isRunning = false; releaseWakeLock(); speakFinishNotice();
+        if (typeof confetti === 'function') confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+        const langKey = isHiragana ? 'hira' : 'kanji';
+        const btnStart = document.getElementById('btn-start');
+        btnStart.textContent = DICT[langKey].start;
+        btnStart.className = 'w-5/12 md:w-1/3 bg-green-600 hover:bg-green-500 active:bg-green-700 active:scale-95 text-white font-black py-2.5 sm:py-3 md:py-4 text-lg sm:text-xl md:text-2xl border-2 sm:border-4 border-green-400 rounded-full shadow-lg transition-transform';
       }
+      renderBar(); renderDigits();
     }
 
-    function speak1MinNotice() {
-      if (isMuted) return;
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        const text = isHiragana ? 'のこり、いっぷん' : '残り、1分';
-        const uttr = new SpeechSynthesisUtterance(text);
-        uttr.lang = 'ja-JP';
-        uttr.rate = 1.0;
-        uttr.pitch = 1.1;
-        window.speechSynthesis.speak(uttr);
-      }
+    function addSeconds(secs) { initAudio(); totalSeconds = Math.min(7200, totalSeconds + secs); remainingSeconds = Math.min(7200, remainingSeconds + secs); if (isRunning) targetEndTime = Date.now() + (remainingSeconds * 1000); renderBar(); renderDigits(); }
+    function addMinutes(mins) { addSeconds(mins * 60); }
+    function clearTimer() { if (isRunning) toggleTimer(); totalSeconds = remainingSeconds = 0; hasAnnouncedHalfway = hasAnnounced5Min = hasAnnounced1Min = false; renderBar(); renderDigits(); }
+    function toggleTimer() {
+      initAudio();
+      if (remainingSeconds <= 0) return;
+      const btnStart = document.getElementById('btn-start');
+      const langKey = isHiragana ? 'hira' : 'kanji';
+      if (isRunning) { clearInterval(timerInterval); isRunning = false; releaseWakeLock(); btnStart.textContent = DICT[langKey].start; btnStart.className = 'w-5/12 md:w-1/3 bg-green-600 hover:bg-green-500 active:bg-green-700 active:scale-95 text-white font-black py-2.5 sm:py-3 md:py-4 text-lg sm:text-xl md:text-2xl border-2 sm:border-4 border-green-400 rounded-full shadow-lg transition-transform'; }
+      else { isRunning = true; targetEndTime = Date.now() + (remainingSeconds * 1000); speakStartNotice(); requestWakeLock(); btnStart.textContent = DICT[langKey].pause; btnStart.className = 'w-5/12 md:w-1/3 bg-yellow-600 hover:bg-yellow-500 active:bg-yellow-700 active:scale-95 text-white font-black py-2.5 sm:py-3 md:py-4 text-lg sm:text-xl md:text-2xl border-2 sm:border-4 border-yellow-400 rounded-full transition-transform'; timerInterval = setInterval(updateTimerTick, 250); }
     }
-
-    function speakFinishNotice() {
-      if (isMuted) return;
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel(); // 終了時は特に、他の通知をすべてキャンセルして優先する
-        const text = isHiragana ? 'おわりです。おつかれさまでした。' : '終わりです。お疲れ様でした。';
-        const uttr = new SpeechSynthesisUtterance(text);
-        uttr.lang = 'ja-JP';
-        uttr.rate = 1.0;
-        uttr.pitch = 1.1;
-        window.speechSynthesis.speak(uttr);
-      }
+    function resetTimer() { if (isRunning) toggleTimer(); remainingSeconds = totalSeconds; hasAnnouncedHalfway = hasAnnounced5Min = hasAnnounced1Min = false; renderBar(); renderDigits(); }
+    function toggleLanguage() {
+      isHiragana = !isHiragana;
+      const dict = DICT[isHiragana ? 'hira' : 'kanji'];
+      document.getElementById('app-title').textContent = dict.title;
+      document.getElementById('btn-lang').textContent = isHiragana ? 'ひらがな' : '漢字';
+      document.getElementById('sound-text').textContent = isMuted ? dict.soundOff : dict.soundOn;
+      document.getElementById('label-add-time').textContent = dict.addTimeLabel;
+      document.getElementById('label-minutes').textContent = dict.min;
+      document.getElementById('label-seconds').textContent = dict.sec;
+      document.getElementById('btn-text-clear').textContent = dict.clear;
+      const btnStart = document.getElementById('btn-start');
+      btnStart.textContent = isRunning ? dict.pause : dict.start;
+      document.getElementById('btn-reset').textContent = dict.reset;
+      document.querySelectorAll('.unit-min').forEach(el => el.textContent = dict.min);
+      document.querySelectorAll('.unit-sec').forEach(el => el.textContent = dict.sec);
     }
+    function toggleSound() { initAudio(); isMuted = !isMuted; document.getElementById('sound-icon').textContent = isMuted ? '🔇' : '🔊'; document.getElementById('sound-text').textContent = isMuted ? DICT[isHiragana ? 'hira' : 'kanji'].soundOff : DICT[isHiragana ? 'hira' : 'kanji'].soundOn; }
 
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && isRunning) { requestWakeLock(); updateTimerTick(); } });
+    window.addEventListener('DOMContentLoaded', () => { renderBar(); renderDigits(); });
+    window.addEventListener('touchstart', function unlock() { initAudio(); window.removeEventListener('touchstart', unlock); }, { passive: true, once: true });
   </script>
 </body>
 </html>
