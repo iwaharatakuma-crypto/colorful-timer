@@ -462,28 +462,6 @@
         document.title = timeTitle;
       }
 
-      // ChromeOS メディアセッション（シェルフ・システムトレイへの時間同期）
-      if ('mediaSession' in navigator) {
-        try {
-          if (!navigator.mediaSession.metadata || navigator.mediaSession.metadata.title !== timeTitle) {
-            navigator.mediaSession.metadata = new MediaMetadata({
-              title: timeTitle,
-              artist: 'カラフルタイマー',
-              album: 'タイマー'
-            });
-          }
-        } catch (e) {}
-      }
-
-      // Chromebookシェルフアイコン用バッジ（残り分数）のリアルタイム更新
-      if ('setAppBadge' in navigator) {
-        if (remainingSeconds > 0) {
-          navigator.setAppBadge(Math.ceil(remainingSeconds / 60)).catch(() => {});
-        } else {
-          navigator.clearAppBadge().catch(() => {});
-        }
-      }
-
       const minContainer = document.getElementById('display-minutes-seg');
       const secContainer = document.getElementById('display-seconds-seg');
 
