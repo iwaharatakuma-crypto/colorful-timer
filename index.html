@@ -10,6 +10,9 @@
   <link rel="icon" href="icon.png" type="image/png">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E⏱️%3C/text%3E%3C/svg%3E" type="image/svg+xml">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  
+  <!-- Chromebook/PWA用マニフェスト（シェルフのウィンドウタイトル・動的同期用） -->
+  <link rel="manifest" href='data:application/json,{"name":"タイマー","short_name":"タイマー","start_url":"./","display":"standalone","background_color":"#000000","theme_color":"#000000"}'>
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -217,7 +220,7 @@
     // テキスト辞書
     const DICT = {
       hira: {
-        title: 'カラフルタイマー',
+        title: 'タイマー',
         soundOn: 'おとあり',
         soundOff: 'おとなし',
         addTimeLabel: 'じかんをたす:',
@@ -229,7 +232,7 @@
         reset: 'やりなおす'
       },
       kanji: {
-        title: 'カラフルタイマー',
+        title: 'タイマー',
         soundOn: '音あり',
         soundOff: 'マナーモード',
         addTimeLabel: '時間を足す:',
@@ -453,7 +456,16 @@
       const secStr = String(secs).padStart(2, '0');
 
       // ページタイトル（タブ・シェルフ表示）に残り時間のみを反映
-      document.title = totalSeconds > 0 ? `${minStr}:${secStr}` : (isHiragana ? DICT.hira.title : DICT.kanji.title);
+      document.title = remainingSeconds > 0 ? `${minStr}:${secStr}` : (isHiragana ? DICT.hira.title : DICT.kanji.title);
+
+      // Chromebookシェルフアイコン用バッジ（残り分数）のリアルタイム更新
+      if ('setAppBadge' in navigator) {
+        if (remainingSeconds > 0) {
+          navigator.setAppBadge(Math.ceil(remainingSeconds / 60)).catch(() => {});
+        } else {
+          navigator.clearAppBadge().catch(() => {});
+        }
+      }
 
       const minContainer = document.getElementById('display-minutes-seg');
       const secContainer = document.getElementById('display-seconds-seg');
@@ -605,7 +617,6 @@
       const langKey = isHiragana ? 'hira' : 'kanji';
       const dict = DICT[langKey];
 
-      document.getElementById('app-title').textContent = dict.title;
       document.getElementById('btn-lang').textContent = isHiragana ? 'ひらがな' : '漢字';
       document.getElementById('sound-text').textContent = isMuted ? dict.soundOff : dict.soundOn;
       document.getElementById('label-add-time').textContent = dict.addTimeLabel;
