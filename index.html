@@ -3,8 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>タイマー</title>
+  <title>カラフルタイマー</title>
   
+  <!-- ファビコン・アプリアイコンの設定 -->
+  <link rel="icon" href="favicon.ico" sizes="any">
+  <link rel="icon" href="icon.png" type="image/png">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E⏱️%3C/text%3E%3C/svg%3E" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   
@@ -437,19 +443,28 @@
       // ちょうど半分の時間の判定と音声アナウンス
       const halfSeconds = Math.floor(totalSeconds / 2);
       if (totalSeconds >= 6 && remainingSeconds <= halfSeconds && !hasAnnouncedHalfway) {
-        speakHalfwayNotice();
+        // 判定タイミングから遅れすぎている（バックグラウンド復帰時等）場合はアナウンスをスキップ
+        if (halfSeconds - remainingSeconds <= 3) {
+          speakHalfwayNotice();
+        }
         hasAnnouncedHalfway = true;
       }
 
       // 15分（900秒）以上設定時で残り5分（300秒）のアナウンス
       if (totalSeconds >= 900 && remainingSeconds <= 300 && !hasAnnounced5Min) {
-        speak5MinNotice();
+        // 判定タイミングから遅れすぎている場合はアナウンスをスキップ
+        if (300 - remainingSeconds <= 3) {
+          speak5MinNotice();
+        }
         hasAnnounced5Min = true;
       }
 
       // 10分（600秒）以上設定時で残り1分（60秒）のアナウンス
       if (totalSeconds >= 600 && remainingSeconds <= 60 && !hasAnnounced1Min) {
-        speak1MinNotice();
+        // 判定タイミングから遅れすぎている場合はアナウンスをスキップ
+        if (60 - remainingSeconds <= 3) {
+          speak1MinNotice();
+        }
         hasAnnounced1Min = true;
       }
 
@@ -690,4 +705,3 @@
   </script>
 </body>
 </html>
-
