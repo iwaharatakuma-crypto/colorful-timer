@@ -457,32 +457,21 @@
 
       const timeTitle = remainingSeconds > 0 ? `${minStr}:${secStr}` : (isHiragana ? DICT.hira.title : DICT.kanji.title);
 
-      // ページタイトル（タブ・シェルフ表示）に残り時間のみを反映
-      document.title = timeTitle;
-      const titleEl = document.querySelector('title');
-      if (titleEl) titleEl.textContent = timeTitle;
-
-      // Chromebookシェルフのアプリホバー名（Web App Manifest）をリアルタイム書き換え
-      const manifestLink = document.getElementById('manifest-link');
-      if (manifestLink) {
-        manifestLink.href = 'data:application/json,' + encodeURIComponent(JSON.stringify({
-          name: timeTitle,
-          short_name: timeTitle,
-          start_url: "./",
-          display: "standalone",
-          background_color: "#000000",
-          theme_color: "#000000"
-        }));
+      // ページタイトル（タブ表示）に残り時間のみを反映（数字が変更された時のみ更新しチラつきを防止）
+      if (document.title !== timeTitle) {
+        document.title = timeTitle;
       }
 
       // ChromeOS メディアセッション（シェルフ・システムトレイへの時間同期）
       if ('mediaSession' in navigator) {
         try {
-          navigator.mediaSession.metadata = new MediaMetadata({
-            title: timeTitle,
-            artist: 'カラフルタイマー',
-            album: 'タイマー'
-          });
+          if (!navigator.mediaSession.metadata || navigator.mediaSession.metadata.title !== timeTitle) {
+            navigator.mediaSession.metadata = new MediaMetadata({
+              title: timeTitle,
+              artist: 'カラフルタイマー',
+              album: 'タイマー'
+            });
+          }
         } catch (e) {}
       }
 
