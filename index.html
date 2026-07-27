@@ -455,8 +455,23 @@
       const minStr = String(mins).padStart(2, '0');
       const secStr = String(secs).padStart(2, '0');
 
+      const timeTitle = remainingSeconds > 0 ? `${minStr}:${secStr}` : (isHiragana ? DICT.hira.title : DICT.kanji.title);
+
       // ページタイトル（タブ・シェルフ表示）に残り時間のみを反映
-      document.title = remainingSeconds > 0 ? `${minStr}:${secStr}` : (isHiragana ? DICT.hira.title : DICT.kanji.title);
+      document.title = timeTitle;
+      const titleEl = document.querySelector('title');
+      if (titleEl) titleEl.textContent = timeTitle;
+
+      // ChromeOS メディアセッション（シェルフ・システムトレイへの時間同期）
+      if ('mediaSession' in navigator) {
+        try {
+          navigator.mediaSession.metadata = new MediaMetadata({
+            title: timeTitle,
+            artist: 'カラフルタイマー',
+            album: 'タイマー'
+          });
+        } catch (e) {}
+      }
 
       // Chromebookシェルフアイコン用バッジ（残り分数）のリアルタイム更新
       if ('setAppBadge' in navigator) {
