@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   
   <!-- Chromebook/PWA用マニフェスト（シェルフのウィンドウタイトル・動的同期用） -->
-  <link rel="manifest" href='data:application/json,{"name":"タイマー","short_name":"タイマー","start_url":"./","display":"standalone","background_color":"#000000","theme_color":"#000000"}'>
+  <link id="manifest-link" rel="manifest" href='data:application/json,{"name":"タイマー","short_name":"タイマー","start_url":"./","display":"standalone","background_color":"#000000","theme_color":"#000000"}'>
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -461,6 +461,19 @@
       document.title = timeTitle;
       const titleEl = document.querySelector('title');
       if (titleEl) titleEl.textContent = timeTitle;
+
+      // Chromebookシェルフのアプリホバー名（Web App Manifest）をリアルタイム書き換え
+      const manifestLink = document.getElementById('manifest-link');
+      if (manifestLink) {
+        manifestLink.href = 'data:application/json,' + encodeURIComponent(JSON.stringify({
+          name: timeTitle,
+          short_name: timeTitle,
+          start_url: "./",
+          display: "standalone",
+          background_color: "#000000",
+          theme_color: "#000000"
+        }));
+      }
 
       // ChromeOS メディアセッション（シェルフ・システムトレイへの時間同期）
       if ('mediaSession' in navigator) {
